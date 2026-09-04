@@ -206,7 +206,7 @@
         }
         try {
           const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`, {
-            headers: { 'X-Access-Key': '$2a$10$...' }
+            headers: { 'X-Access-Key': '$2a$10$ctfwau541VgjzvQ6UPivNOXBkt5STq8A7he3P9DmlEreel5fiOPvm' }
           });
           const data = await res.json();
           if (data && data.record && data.record.bookings) {
@@ -236,7 +236,7 @@
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
-                'X-Master-Key': '$2a$10$...'
+                'X-Master-Key': '$2a$10$ctfwau541VgjzvQ6UPivNOXBkt5STq8A7he3P9DmlEreel5fiOPvm'
               },
               body: JSON.stringify({ bookings: newList })
             });
