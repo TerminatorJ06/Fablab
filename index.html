@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NIA FabLab Slot Booking Portal</title>
 
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
@@ -23,7 +22,6 @@
 <body class="bg-[#FBFBFA] text-zinc-900 font-sans antialiased selection:bg-zinc-200">
   <div id="root"></div>
 
-  <!-- Native ES Modules with Robust Local & Cross-Tab Sync -->
   <script type="module">
     import { h, render } from 'https://esm.sh/preact@10.19.6';
     import { useState, useEffect, useMemo } from 'https://esm.sh/preact@10.19.6/hooks';
@@ -106,30 +104,6 @@
         timeSlot: '09:00 AM - 10:00 AM',
         status: 'Confirmed',
         createdAt: Date.now() - 3600000 * 3
-      },
-      {
-        id: 'NIA-3D-204',
-        token: 'NIA-3D-204',
-        machineId: '3d-printer',
-        machineName: '3D Printing Machine',
-        studentName: 'Rohan Hegde',
-        semester: 'B.Arch Sem 8',
-        date: getOffsetDateString(0),
-        timeSlot: '02:00 PM - 03:00 PM',
-        status: 'Confirmed',
-        createdAt: Date.now() - 3600000 * 2
-      },
-      {
-        id: 'NIA-LC-105',
-        token: 'NIA-LC-105',
-        machineId: 'laser-cutter',
-        machineName: 'Laser Cutting Machine',
-        studentName: 'Mohammed Zaid',
-        semester: 'B.Arch Sem 4',
-        date: getOffsetDateString(1),
-        timeSlot: '11:00 AM - 12:00 PM',
-        status: 'Confirmed',
-        createdAt: Date.now() - 3600000
       }
     ];
 
@@ -183,15 +157,17 @@
     `;
 
     function App() {
+      // --- EASY CLOUD SETUP: JUST PASTE YOUR JSONBIN ID BELOW ---
+      const BIN_ID = localStorage.getItem('nia_bin_id') || "";
+      // ---------------------------------------------------------
+
+      const [binInput, setBinInput] = useState(BIN_ID);
+      const [showBinModal, setShowBinModal] = useState(!BIN_ID);
+
       const [activeTab, setActiveTab] = useState('book');
       const [selectedMachine, setSelectedMachine] = useState(MACHINES[0]);
-      const [bookings, setBookings] = useState(() => {
-        const saved = localStorage.getItem('nia_fablab_bookings_v3');
-        if (saved) {
-          try { return JSON.parse(saved); } catch (e) {}
-        }
-        return INITIAL_BOOKINGS;
-      });
+      const [bookings, setBookings] = useState(INITIAL_BOOKINGS);
+      const [isSyncing, setIsSyncing] = useState(false);
 
       // 7-day quick date picker
       const dateOptions = useMemo(() => {
@@ -225,31 +201,53 @@
       const [editError, setEditError] = useState('');
       const [deleteBookingTarget, setDeleteBookingTarget] = useState(null);
 
-      // Cross-tab sync via BroadcastChannel
+      // Fetch Bookings from JSONBin Cloud
+      const fetchCloudBookings = async () => {
+        if (!BIN_ID) return;
+        try {
+          const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: { 'X-Access-Key': '$2a$10$...' } // Public read access if bin is public
+          });
+          const data = await res.json();
+          if (data && data.record && data.record.bookings) {
+            setBookings(data.record.bookings);
+          }
+        } catch (e) {
+          // Fallback to local storage if network fails
+          const local = localStorage.getItem('nia_local_bookings');
+          if (local) setBookings(JSON.parse(local));
+        } finally {
+          setIsSyncing(false);
+        }
+      };
+
       useEffect(() => {
-        let broadcast;
-        try {
-          broadcast = new BroadcastChannel('nia_fablab_sync_v3');
-          broadcast.onmessage = (event) => {
-            if (event.data && event.data.type === 'SYNC_BOOKINGS') {
-              setBookings(event.data.bookings);
-            }
-          };
-        } catch (e) {}
+        if (BIN_ID) {
+          fetchCloudBookings();
+          const interval = setInterval(fetchCloudBookings, 4000); // Poll every 4 seconds for live sync
+          return () => clearInterval(interval);
+        } else {
+          const local = localStorage.getItem('nia_local_bookings');
+          if (local) setBookings(JSON.parse(local));
+        }
+      }, [BIN_ID]);
 
-        return () => {
-          if (broadcast) broadcast.close();
-        };
-      }, []);
+      const saveAndSync = async (newList) => {
+        setBookings(newList);
+        localStorage.setItem('nia_local_bookings', JSON.stringify(newList));
 
-      const syncAndSave = (updatedList) => {
-        setBookings(updatedList);
-        try {
-          localStorage.setItem('nia_fablab_bookings_v3', JSON.stringify(updatedList));
-          const broadcast = new BroadcastChannel('nia_fablab_sync_v3');
-          broadcast.postMessage({ type: 'SYNC_BOOKINGS', bookings: updatedList });
-          broadcast.close();
-        } catch (e) {}
+        if (BIN_ID) {
+          try {
+            await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Master-Key': '$2a$10$...' // Optional master key if required by your bin settings
+              },
+              body: JSON.stringify({ bookings: newList })
+            });
+          } catch (e) {}
+        }
       };
 
       const isSlotBooked = (slot, date, machineId, excludeId = null) => {
@@ -298,7 +296,7 @@
         };
 
         const updated = [newBooking, ...bookings];
-        syncAndSave(updated);
+        saveAndSync(updated);
 
         setSuccessModalData(newBooking);
         setSelectedSlot('');
@@ -343,13 +341,13 @@
             : b
         );
 
-        syncAndSave(updated);
+        saveAndSync(updated);
         setEditingBooking(null);
       };
 
       const handleDeleteBooking = (id) => {
         const updated = bookings.filter((b) => b.id !== id);
-        syncAndSave(updated);
+        saveAndSync(updated);
         setDeleteBookingTarget(null);
       };
 
@@ -367,11 +365,9 @@
 
       return html`
         <div class="min-h-screen bg-[#FBFBFA] text-zinc-900 flex flex-col font-sans antialiased selection:bg-zinc-200">
-          <!-- INSTITUTION TOP NAVIGATION -->
           <header class="bg-white border-b border-zinc-200 sticky top-0 z-40">
             <div class="max-w-6xl mx-auto px-3.5 sm:px-6">
               <div class="flex items-center justify-between min-h-16 py-2 gap-2">
-                <!-- Logo & Institute Name -->
                 <div class="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
                   <div class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-bold text-xs sm:text-sm tracking-wider shadow-xs">
                     NIA
@@ -389,14 +385,21 @@
                       <p class="text-[10px] sm:text-xs text-zinc-500 truncate">Digital Lab Slot Booking</p>
                       <span class="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full font-medium">
                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        Live Portal
+                        ${BIN_ID ? 'Cloud Live Sync' : 'Local Mode'}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <!-- Navigation Tabs & Admin -->
                 <div class="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick=${() => setShowBinModal(true)}
+                    class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 transition"
+                  >
+                    ⚙️ Configure Cloud Bin
+                  </button>
+
                   <div class="flex items-center bg-zinc-100 p-1 rounded-xl border border-zinc-200/80">
                     <button
                       type="button"
@@ -443,7 +446,6 @@
             </div>
           </header>
 
-          <!-- LAB TIMINGS BANNER -->
           <div class="bg-zinc-50 border-b border-zinc-200/70 py-2">
             <div class="max-w-6xl mx-auto px-3.5 sm:px-6 flex flex-wrap items-center justify-between gap-1.5 text-[11px] sm:text-xs text-zinc-600">
               <div class="flex items-center space-x-2">
@@ -457,7 +459,6 @@
             </div>
           </div>
 
-          <!-- MAIN BODY -->
           <main class="flex-1 max-w-6xl w-full mx-auto px-3.5 sm:px-6 py-5 sm:py-8">
             ${activeTab === 'book'
               ? html`
@@ -475,9 +476,7 @@
                     </div>
 
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-                      <!-- STEP 1 & 2 -->
                       <div class="lg:col-span-7 space-y-5 sm:space-y-6">
-                        <!-- Step 1: Select Machine -->
                         <div class="bg-white rounded-2xl p-4 sm:p-5 border border-zinc-200/90 shadow-xs">
                           <div class="flex items-center justify-between mb-3">
                             <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Step 01</span>
@@ -516,14 +515,12 @@
                           </div>
                         </div>
 
-                        <!-- Step 2: Date & Slots -->
                         <div class="bg-white rounded-2xl p-4 sm:p-6 border border-zinc-200/90 shadow-xs">
                           <div class="flex items-center justify-between mb-3.5">
                             <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Step 02</span>
                             <span class="text-xs font-medium text-zinc-600">Pick Date & Time</span>
                           </div>
 
-                          <!-- Date selector -->
                           <div class="mb-5">
                             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
                               <label class="text-xs font-medium text-zinc-700 flex items-center gap-1.5">
@@ -568,7 +565,6 @@
                             </div>
                           </div>
 
-                          <!-- 1-Hour Time Slots -->
                           <div>
                             <div class="flex items-center justify-between mb-2 text-xs font-medium text-zinc-700">
                               <span>Slots for ${formatDateDisplay(selectedDate)}</span>
@@ -610,7 +606,6 @@
                         </div>
                       </div>
 
-                      <!-- STEP 3: Student Details Form -->
                       <div class="lg:col-span-5">
                         <div class="bg-white rounded-2xl p-4 sm:p-6 border border-zinc-200/90 shadow-xs lg:sticky lg:top-24">
                           <div class="flex items-center justify-between mb-3.5">
@@ -680,7 +675,6 @@
                   </div>
                 `
               : html`
-                  <!-- SCHEDULE VIEW -->
                   <div class="space-y-5 sm:space-y-6">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
@@ -716,7 +710,6 @@
                             </div>
                           `
                         : html`
-                            <!-- Mobile View -->
                             <div class="block md:hidden divide-y divide-zinc-100">
                               ${filteredBookings.map(
                                 (b) => html`
@@ -767,7 +760,7 @@
                                         </button>
                                         <button
                                           type="button"
-                                          onClick=${() => setDeleteBookingTarget(b)}
+                                          onClick=${() => handleDeleteBooking(b.id)}
                                           class="p-1.5 text-rose-600 bg-rose-50 rounded-lg"
                                         >
                                           <${TrashIcon} />
@@ -779,7 +772,6 @@
                               )}
                             </div>
 
-                            <!-- Desktop Table -->
                             <div class="hidden md:block overflow-x-auto">
                               <table class="w-full text-left text-xs">
                                 <thead>
@@ -833,7 +825,7 @@
                                               </button>
                                               <button
                                                 type="button"
-                                                onClick=${() => setDeleteBookingTarget(b)}
+                                                onClick=${() => handleDeleteBooking(b.id)}
                                                 class="p-1.5 text-zinc-600 hover:text-rose-600 bg-zinc-100 rounded-md"
                                               >
                                                 <${TrashIcon} />
@@ -853,7 +845,42 @@
                 `}
           </main>
 
-          <!-- MODAL: ADMIN LOGIN -->
+          ${showBinModal &&
+          html`
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4">
+              <div class="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-zinc-200 p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                  <h3 class="font-semibold text-zinc-900 text-sm">Configure Cloud Sync</h3>
+                  <button type="button" onClick=${() => setShowBinModal(false)} class="text-zinc-400 hover:text-zinc-700">✕</button>
+                </div>
+                <div class="text-xs text-zinc-500 space-y-2">
+                  <p>Paste your <strong>JSONBin ID</strong> below so everyone's bookings sync live across all phones and laptops.</p>
+                </div>
+                <form onSubmit=${(e) => {
+                  e.preventDefault();
+                  localStorage.setItem('nia_bin_id', binInput.trim());
+                  setShowBinModal(false);
+                  window.location.reload();
+                }} class="space-y-3 text-xs">
+                  <div>
+                    <label class="block font-medium text-zinc-700 mb-1">JSONBin ID</label>
+                    <input
+                      type="text"
+                      value=${binInput}
+                      onInput=${(e) => setBinInput(e.target.value)}
+                      placeholder="e.g. 66e1b7..."
+                      class="w-full min-h-[42px] px-3 rounded-xl border border-zinc-200 focus:outline-none focus:border-zinc-900 font-mono"
+                    />
+                  </div>
+                  <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onClick=${() => setShowBinModal(false)} class="px-3 py-2 bg-zinc-100 rounded-xl">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-zinc-900 text-white rounded-xl font-medium">Save & Sync</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          `}
+
           ${showAdminModal &&
           html`
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4">
@@ -883,7 +910,6 @@
             </div>
           `}
 
-          <!-- MODAL: ADMIN EDIT BOOKING -->
           ${editingBooking &&
           html`
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4">
@@ -953,24 +979,6 @@
             </div>
           `}
 
-          <!-- MODAL: CONFIRM DELETE -->
-          ${deleteBookingTarget &&
-          html`
-            <div class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4">
-              <div class="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-zinc-200 p-5 space-y-3">
-                <h3 class="font-semibold text-zinc-900 text-sm">Delete Booking?</h3>
-                <p class="text-xs text-zinc-500">
-                  Remove token <strong class="text-zinc-800">${deleteBookingTarget.token}</strong> for ${deleteBookingTarget.studentName}?
-                </p>
-                <div class="flex justify-end space-x-2 pt-2">
-                  <button type="button" onClick=${() => setDeleteBookingTarget(null)} class="px-3 py-2 bg-zinc-100 text-xs rounded-xl">Cancel</button>
-                  <button type="button" onClick=${() => handleDeleteBooking(deleteBookingTarget.id)} class="px-4 py-2 bg-rose-600 text-white text-xs rounded-xl font-medium">Delete</button>
-                </div>
-              </div>
-            </div>
-          `}
-
-          <!-- MODAL: DIGITAL SLIP -->
           ${successModalData &&
           html`
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4">
@@ -1024,7 +1032,6 @@
             </div>
           `}
 
-          <!-- FOOTER -->
           <footer class="border-t border-zinc-200 bg-white py-5 mt-10 text-xs text-zinc-500">
             <div class="max-w-6xl mx-auto px-3.5 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
               <span class="font-medium text-zinc-800">Nitte Institute of Architecture (NIA) • Mangaluru</span>
