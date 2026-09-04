@@ -23,42 +23,14 @@
 <body class="bg-[#FBFBFA] text-zinc-900 font-sans antialiased selection:bg-zinc-200">
   <div id="root"></div>
 
-  <!-- Native ES Modules with Firebase Real-Time Cloud Sync -->
+  <!-- Native ES Modules with Robust Local & Cross-Tab Sync -->
   <script type="module">
     import { h, render } from 'https://esm.sh/preact@10.19.6';
     import { useState, useEffect, useMemo } from 'https://esm.sh/preact@10.19.6/hooks';
     import htm from 'https://esm.sh/htm@3.1.1';
 
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-    import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-    import { getFirestore, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
     // Bind htm to Preact's createElement
     const html = htm.bind(h);
-
-    // --- FIREBASE CONFIGURATION & INITIALIZATION ---
-    // Note: If you want your own independent cloud database, replace this config object 
-    // with your Firebase Console project keys. Works out-of-the-box on GitHub Pages.
-    const firebaseConfig = {
-      apiKey: "AIzaSyDummyKeyForGitHubPagesHosting9981",
-      authDomain: "nia-fablab.firebaseapp.com",
-      projectId: "nia-fablab-booking",
-      storageBucket: "nia-fablab.appspot.com",
-      messagingSenderId: "123456789012",
-      appId: "1:123456789012:web:abcdef1234567890"
-    };
-
-    let db = null;
-    let auth = null;
-    const appId = 'nia-fablab-portal-v1';
-
-    try {
-      const app = initializeApp(firebaseConfig);
-      auth = getAuth(app);
-      db = getFirestore(app);
-    } catch (e) {
-      console.warn("Cloud fallback initialized");
-    }
 
     // --- MACHINES CONFIGURATION ---
     const MACHINES = [
@@ -213,8 +185,14 @@
     function App() {
       const [activeTab, setActiveTab] = useState('book');
       const [selectedMachine, setSelectedMachine] = useState(MACHINES[0]);
-      const [bookings, setBookings] = useState(INITIAL_BOOKINGS);
-      const [isSyncing, setIsSyncing] = useState(true);
+      const [bookings, setBookings] = useState(() => {
+        const saved = localStorage.getItem('nia_fablab_bookings_v2');
+        if (saved) {
+          try { return JSON.parse(saved); } catch (e) {}
+        }
+        return INITIAL_BOOKINGS;
+      });
+      const [isSyncing, setIsSyncing] = useState(false);
 
       // 7-day quick date picker
       const dateOptions = useMemo(() => {
@@ -248,54 +226,32 @@
       const [editError, setEditError] = useState('');
       const [deleteBookingTarget, setDeleteBookingTarget] = useState(null);
 
-      // Realtime Cloud Sync via Firebase Firestore
+      // Cross-tab sync via BroadcastChannel
       useEffect(() => {
-        let unsubscribe = () => {};
-
-        const initSync = async () => {
-          if (!auth || !db) {
-            setIsSyncing(false);
-            return;
-          }
-
-          try {
-            await signInAnonymously(auth);
-            const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
-
-            unsubscribe = onSnapshot(colRef, (snapshot) => {
-              if (snapshot.empty) {
-                // Seed initial sample bookings if remote database is empty
-                INITIAL_BOOKINGS.forEach(async (b) => {
-                  try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', b.id), b);
-                  } catch (e) {}
-                });
-                setBookings(INITIAL_BOOKINGS);
-              } else {
-                const cloudList = [];
-                snapshot.forEach((docSnap) => {
-                  cloudList.push({ id: docSnap.id, ...docSnap.data() });
-                });
-                cloudList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                setBookings(cloudList);
-              }
-              setIsSyncing(false);
-            }, (error) => {
-              console.warn("Sync fallback:", error.message);
-              setIsSyncing(false);
-            });
-          } catch (err) {
-            console.warn("Auth fallback:", err.message);
-            setIsSyncing(false);
-          }
-        };
-
-        initSync();
+        let broadcast;
+        try {
+          broadcast = new BroadcastChannel('nia_fablab_sync_v2');
+          broadcast.onmessage = (event) => {
+            if (event.data && event.data.type === 'SYNC_BOOKINGS') {
+              setBookings(event.data.bookings);
+            }
+          };
+        } catch (e) {}
 
         return () => {
-          unsubscribe();
+          if (broadcast) broadcast.close();
         };
       }, []);
+
+      const syncAndSave = (updatedList) => {
+        setBookings(updatedList);
+        try {
+          localStorage.setItem('nia_fablab_bookings_v2', JSON.stringify(updatedList));
+          const broadcast = new BroadcastChannel('nia_fablab_sync_v2');
+          broadcast.postMessage({ type: 'SYNC_BOOKINGS', bookings: updatedList });
+          broadcast.close();
+        } catch (e) {}
+      };
 
       const isSlotBooked = (slot, date, machineId, excludeId = null) => {
         return bookings.some(
@@ -306,13 +262,14 @@
       const handleSlotSelect = (slot) => {
         if (isSlotBooked(slot, selectedDate, selectedMachine.id)) return;
         setSelectedSlot(slot);
+        setFormErrors({ ...formErrors, slot: null });
       };
 
-      const handleSubmitBooking = async (e) => {
+      const handleSubmitBooking = (e) => {
         e.preventDefault();
         const errors = {};
         if (!formData.name.trim()) errors.name = 'Please enter your full name';
-        if (!selectedSlot) errors.slot = 'Please select an available 1-hour slot';
+        if (!selectedSlot) errors.slot = 'Please select an available 1-hour time slot on the left';
 
         if (Object.keys(errors).length > 0) {
           setFormErrors(errors);
@@ -320,7 +277,7 @@
         }
 
         if (isSlotBooked(selectedSlot, selectedDate, selectedMachine.id)) {
-          setFormErrors({ slot: 'This slot was just reserved by another student. Please pick another.' });
+          setFormErrors({ slot: 'This slot was just reserved. Please pick another.' });
           return;
         }
 
@@ -341,15 +298,8 @@
           createdAt: Date.now()
         };
 
-        try {
-          if (db) {
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', newBooking.id), newBooking);
-          } else {
-            setBookings([newBooking, ...bookings]);
-          }
-        } catch (e) {
-          setBookings([newBooking, ...bookings]);
-        }
+        const updated = [newBooking, ...bookings];
+        syncAndSave(updated);
 
         setSuccessModalData(newBooking);
         setSelectedSlot('');
@@ -368,7 +318,7 @@
         }
       };
 
-      const handleSaveEdit = async (e) => {
+      const handleSaveEdit = (e) => {
         e.preventDefault();
         if (!editForm.studentName.trim()) {
           setEditError('Student name cannot be empty.');
@@ -380,38 +330,27 @@
         }
 
         const machineObj = MACHINES.find((m) => m.id === editForm.machineId);
-        const updatedData = {
-          studentName: editForm.studentName.trim(),
-          semester: editForm.semester,
-          machineId: editForm.machineId,
-          machineName: machineObj ? machineObj.name : editingBooking.machineName,
-          date: editForm.date,
-          timeSlot: editForm.timeSlot
-        };
+        const updated = bookings.map((b) =>
+          b.id === editingBooking.id
+            ? {
+                ...b,
+                studentName: editForm.studentName.trim(),
+                semester: editForm.semester,
+                machineId: editForm.machineId,
+                machineName: machineObj ? machineObj.name : b.machineName,
+                date: editForm.date,
+                timeSlot: editForm.timeSlot
+              }
+            : b
+        );
 
-        try {
-          if (db) {
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', editingBooking.id), updatedData);
-          } else {
-            setBookings(bookings.map((b) => (b.id === editingBooking.id ? { ...b, ...updatedData } : b)));
-          }
-        } catch (e) {
-          setBookings(bookings.map((b) => (b.id === editingBooking.id ? { ...b, ...updatedData } : b)));
-        }
-
+        syncAndSave(updated);
         setEditingBooking(null);
       };
 
-      const handleDeleteBooking = async (id) => {
-        try {
-          if (db) {
-            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', id));
-          } else {
-            setBookings(bookings.filter((b) => b.id !== id));
-          }
-        } catch (e) {
-          setBookings(bookings.filter((b) => b.id !== id));
-        }
+      const handleDeleteBooking = (id) => {
+        const updated = bookings.filter((b) => b.id !== id);
+        syncAndSave(updated);
         setDeleteBookingTarget(null);
       };
 
@@ -451,7 +390,7 @@
                       <p class="text-[10px] sm:text-xs text-zinc-500 truncate">Digital Lab Slot Booking</p>
                       <span class="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full font-medium">
                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        Cloud Realtime Sync
+                        Live Portal
                       </span>
                     </div>
                   </div>
@@ -529,7 +468,7 @@
                         Reserve your slot in <span class="font-semibold">3 simple steps</span>
                       </h2>
                       <p class="mt-1 text-xs sm:text-sm text-zinc-500">
-                        Choose machine, pick available time slot, and confirm your name. Updates instantly across all devices.
+                        Choose machine, pick available time slot, and confirm your name.
                       </p>
                     </div>
 
@@ -720,6 +659,12 @@
                               </select>
                             </div>
 
+                            ${formErrors.slot && html`
+                              <div class="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-[11px]">
+                                ${formErrors.slot}
+                              </div>
+                            `}
+
                             <button
                               type="submit"
                               class="w-full min-h-[46px] mt-2 py-3 px-4 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] text-white rounded-xl text-sm font-medium tracking-wide transition shadow-xs"
@@ -762,14 +707,7 @@
                         <span class="text-xs text-zinc-400">1-Hour Blocks</span>
                       </div>
 
-                      ${isSyncing
-                        ? html`
-                            <div class="py-12 text-center text-zinc-400 text-xs">
-                              <span class="inline-block w-5 h-5 border-2 border-zinc-300 border-t-zinc-900 rounded-full animate-spin mb-2"></span>
-                              <p>Syncing live reservations...</p>
-                            </div>
-                          `
-                        : filteredBookings.length === 0
+                      ${filteredBookings.length === 0
                         ? html`
                             <div class="py-12 text-center text-zinc-400 text-xs">
                               No bookings found matching "${searchQuery}".
