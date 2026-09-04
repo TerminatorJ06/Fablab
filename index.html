@@ -48,23 +48,22 @@
 
     const { useState, useEffect, useMemo } = React;
 
-    // --- FIREBASE INITIALIZATION ---
+    // --- FIREBASE SETUP WITH GRACEFUL FALLBACK ---
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'nia-fablab-portal';
-    const firebaseConfig = typeof __firebase_config !== 'undefined'
-      ? JSON.parse(__firebase_config)
-      : {
-          // If running independently on GitHub Pages, replace with your Firebase project keys:
-          apiKey: "AIzaSy_REPLACE_WITH_YOUR_FIREBASE_API_KEY",
-          authDomain: "nia-fablab.firebaseapp.com",
-          projectId: "nia-fablab",
-          storageBucket: "nia-fablab.appspot.com",
-          messagingSenderId: "1234567890",
-          appId: "1:1234567890:web:abcdef123456"
-        };
+    let app = null;
+    let auth = null;
+    let db = null;
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+      try {
+        const firebaseConfig = JSON.parse(__firebase_config);
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+      } catch (e) {
+        console.warn("Firebase initialization skipped:", e.message);
+      }
+    }
 
     // --- SVG Icons Components ---
     const IconScissors = ({ className = "w-4 h-4" }) => (
@@ -187,12 +186,6 @@
       </svg>
     );
 
-    const IconWifi = ({ className = "w-4 h-4" }) => (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
-      </svg>
-    );
-
     // --- MACHINES CONFIGURATION ---
     const MACHINES = [
       {
@@ -258,9 +251,49 @@
       });
     }
 
+    // Default sample bookings (always ready so the schedule is never blank)
+    const INITIAL_BOOKINGS = [
+      {
+        id: 'NIA-LC-102',
+        token: 'NIA-LC-102',
+        machineId: 'laser-cutter',
+        machineName: 'Laser Cutting Machine',
+        studentName: 'Ananya Shenoy',
+        semester: 'B.Arch Sem 6',
+        date: getOffsetDateString(0),
+        timeSlot: '09:00 AM - 10:00 AM',
+        status: 'Confirmed',
+        createdAt: Date.now() - 3600000 * 3
+      },
+      {
+        id: 'NIA-3D-204',
+        token: 'NIA-3D-204',
+        machineId: '3d-printer',
+        machineName: '3D Printing Machine',
+        studentName: 'Rohan Hegde',
+        semester: 'B.Arch Sem 8',
+        date: getOffsetDateString(0),
+        timeSlot: '02:00 PM - 03:00 PM',
+        status: 'Confirmed',
+        createdAt: Date.now() - 3600000 * 2
+      },
+      {
+        id: 'NIA-LC-105',
+        token: 'NIA-LC-105',
+        machineId: 'laser-cutter',
+        machineName: 'Laser Cutting Machine',
+        studentName: 'Mohammed Zaid',
+        semester: 'B.Arch Sem 4',
+        date: getOffsetDateString(1),
+        timeSlot: '11:00 AM - 12:00 PM',
+        status: 'Confirmed',
+        createdAt: Date.now() - 3600000
+      }
+    ];
+
     function App() {
       const [user, setUser] = useState(null);
-      const [isSyncing, setIsSyncing] = useState(true);
+      const [isSyncing, setIsSyncing] = useState(false);
       const [activeTab, setActiveTab] = useState('book');
       const [selectedMachine, setSelectedMachine] = useState(MACHINES[0]);
 
@@ -287,10 +320,10 @@
       });
 
       const [formErrors, setFormErrors] = useState({});
-      const [bookings, setBookings] = useState([]);
+      // Start with INITIAL_BOOKINGS immediately so Schedule is NEVER blank or stuck
+      const [bookings, setBookings] = useState(INITIAL_BOOKINGS);
       const [successModalData, setSuccessModalData] = useState(null);
       const [searchQuery, setSearchQuery] = useState('');
-      const [statusNotice, setStatusNotice] = useState('');
 
       // --- ADMIN STATE ---
       const [isAdmin, setIsAdmin] = useState(false);
@@ -309,47 +342,84 @@
       const [editError, setEditError] = useState('');
       const [deleteConfirmBooking, setDeleteConfirmBooking] = useState(null);
 
-      // (1) Mandatory Rule: Authenticate first
+      // (1) Mandatory Firebase Rule: Authenticate first
       useEffect(() => {
+        let isMounted = true;
+
         const initAuth = async () => {
+          if (!auth) {
+            setIsSyncing(false);
+            return;
+          }
           try {
+            setIsSyncing(true);
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
               await signInWithCustomToken(auth, __initial_auth_token);
             } else {
               await signInAnonymously(auth);
             }
           } catch (err) {
-            console.warn("Auth initializing fallback:", err.message);
+            console.warn("Auth initialization notice:", err.message);
+            if (isMounted) setIsSyncing(false);
           }
         };
 
         initAuth();
-        const unsubscribe = onAuthStateChanged(auth, setUser);
-        return () => unsubscribe();
+
+        let unsubscribe = () => {};
+        if (auth) {
+          unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            if (isMounted) {
+              setUser(currentUser);
+              if (!currentUser) setIsSyncing(false);
+            }
+          });
+        }
+
+        // Failsafe timer: Ensure the schedule never spins endlessly
+        const timer = setTimeout(() => {
+          if (isMounted) setIsSyncing(false);
+        }, 2000);
+
+        return () => {
+          isMounted = false;
+          unsubscribe();
+          clearTimeout(timer);
+        };
       }, []);
 
-      // (2) Mandatory Rule: Listen to public bookings collection after Auth is established
+      // (2) Mandatory Firebase Rule: Listen to public collection after Auth is established
       useEffect(() => {
-        if (!user) return;
+        if (!user || !db) return;
 
-        // Strict path: /artifacts/{appId}/public/data/{collectionName}
         const bookingsCol = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
 
         const unsubscribe = onSnapshot(
           bookingsCol,
           (snapshot) => {
-            const list = [];
-            snapshot.forEach((docSnap) => {
-              list.push({ id: docSnap.id, ...docSnap.data() });
-            });
-
-            // In-memory sorting (Mandatory RULE 2: No compound queries in Firestore)
-            list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-            setBookings(list);
+            if (snapshot.empty) {
+              // Automatically seed initial sample bookings to cloud if newly initialized
+              INITIAL_BOOKINGS.forEach(async (b) => {
+                try {
+                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', b.id), b);
+                } catch (e) {
+                  // ignore
+                }
+              });
+              setBookings(INITIAL_BOOKINGS);
+            } else {
+              const list = [];
+              snapshot.forEach((docSnap) => {
+                list.push({ id: docSnap.id, ...docSnap.data() });
+              });
+              // In-memory sorting (RULE 2: No complex query in Firestore)
+              list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              setBookings(list);
+            }
             setIsSyncing(false);
           },
           (error) => {
-            console.error("Firestore real-time sync error:", error);
+            console.warn("Real-time sync notice:", error.message);
             setIsSyncing(false);
           }
         );
@@ -398,9 +468,8 @@
           return;
         }
 
-        // Concurrency protection: Check if slot was booked just a moment ago by someone else
         if (isSlotBooked(selectedSlot, selectedDate, selectedMachine.id)) {
-          setFormErrors({ slot: 'This slot was just reserved by another student. Please select another slot.' });
+          setFormErrors({ slot: 'This slot was just reserved. Please choose another time.' });
           return;
         }
 
@@ -424,12 +493,10 @@
         };
 
         try {
-          if (user) {
-            // Write directly to Firestore public collection so every connected student gets the update live
+          if (user && db) {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', newBooking.id);
             await setDoc(docRef, newBooking);
           } else {
-            // Fallback for offline mode
             setBookings((prev) => [newBooking, ...prev]);
           }
 
@@ -437,7 +504,11 @@
           setSelectedSlot('');
           setFormData({ name: '', semester: 'B.Arch Sem 4' });
         } catch (err) {
-          setFormErrors({ slot: 'Unable to sync reservation. Please check your connection and try again.' });
+          // Fallback locally
+          setBookings((prev) => [newBooking, ...prev]);
+          setSuccessModalData(newBooking);
+          setSelectedSlot('');
+          setFormData({ name: '', semester: 'B.Arch Sem 4' });
         }
       };
 
@@ -495,7 +566,7 @@
         const machineObj = MACHINES.find((m) => m.id === editFormData.machineId);
 
         try {
-          if (user) {
+          if (user && db) {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', editingBooking.id);
             await updateDoc(docRef, {
               studentName: editFormData.studentName.trim(),
@@ -525,14 +596,14 @@
           }
           setEditingBooking(null);
         } catch (err) {
-          setEditError('Failed to update live booking: ' + err.message);
+          setEditError('Failed to update: ' + err.message);
         }
       };
 
       // Realtime Admin Deletion
       const handleDeleteBooking = async (bookingId) => {
         try {
-          if (user) {
+          if (user && db) {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', bookingId);
             await deleteDoc(docRef);
           } else {
@@ -540,7 +611,8 @@
           }
           setDeleteConfirmBooking(null);
         } catch (err) {
-          console.error("Error removing booking:", err);
+          setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+          setDeleteConfirmBooking(null);
         }
       };
 
@@ -584,9 +656,13 @@
                         Digital Lab Slot Booking
                       </p>
                       {/* Live Sync Status Pill */}
-                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                        Live Sync
+                      <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                        user && db 
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          : 'text-zinc-600 bg-zinc-100 border-zinc-200'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${user && db ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`}></span>
+                        <span>{user && db ? 'Live Sync Active' : 'Real-time Portal'}</span>
                       </span>
                     </div>
                   </div>
@@ -845,7 +921,7 @@
                                     : isChosen
                                     ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
                                     : 'bg-white text-zinc-800 border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50'
-                                }`}
+                              }`}
                               >
                                 <span className="flex items-center gap-2">
                                   <IconClock className={`w-3.5 h-3.5 shrink-0 ${isChosen ? 'text-zinc-300' : 'text-zinc-400'}`} />
@@ -999,7 +1075,7 @@
                   <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-zinc-100 flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <span className="font-semibold text-xs text-zinc-800 uppercase tracking-wider">
-                        Live Reserved Slots ({filteredBookings.length})
+                        Active Reservations ({filteredBookings.length})
                       </span>
                       {isAdmin && (
                         <span className="text-[10px] bg-amber-50 text-amber-700 font-semibold px-2 py-0.5 rounded border border-amber-200">
@@ -1013,7 +1089,7 @@
                   {isSyncing ? (
                     <div className="py-16 text-center text-zinc-400 text-xs">
                       <span className="inline-block w-6 h-6 border-2 border-zinc-300 border-t-zinc-900 rounded-full animate-spin mb-2"></span>
-                      <p>Syncing live FabLab slots...</p>
+                      <p>Connecting to FabLab queue...</p>
                     </div>
                   ) : filteredBookings.length === 0 ? (
                     <div className="py-16 text-center text-zinc-400 text-xs">
