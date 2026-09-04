@@ -200,7 +200,7 @@
 
       // Fetch Bookings from JSONBin Cloud
       const fetchCloudBookings = async () => {
-        if (!JSONBIN_ID || JSONBIN_ID === "PASTE_YOUR_JSONBIN_ID_HERE") {
+        if (!JSONBIN_ID || JSONBIN_ID === "6a9a8a3ff5f4af5e296930df") {
           setIsSyncing(false);
           return;
         }
@@ -230,7 +230,7 @@
         setBookings(newList);
         localStorage.setItem('nia_local_bookings', JSON.stringify(newList));
 
-        if (JSONBIN_ID && JSONBIN_ID !== "PASTE_YOUR_JSONBIN_ID_HERE") {
+        if (JSONBIN_ID && JSONBIN_ID !== "6a9a8a3ff5f4af5e296930df") {
           try {
             await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}`, {
               method: 'PUT',
