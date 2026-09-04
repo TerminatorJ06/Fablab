@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NIA FabLab Slot Booking Portal</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & Babel for in-browser JSX execution -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-[#FBFBFA] text-zinc-900 font-sans antialiased selection:bg-zinc-200">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+    import { 
+      getAuth, 
+      signInWithCustomToken, 
+      signInAnonymously, 
+      onAuthStateChanged 
+    } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+    import { 
+      getFirestore, 
+      collection, 
+      doc, 
+      setDoc, 
+      deleteDoc, 
+      updateDoc, 
+      onSnapshot 
+    } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+    const { useState, useEffect, useMemo } = React;
+
+    // --- FIREBASE INITIALIZATION ---
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'nia-fablab-portal';
+    const firebaseConfig = typeof __firebase_config !== 'undefined'
+      ? JSON.parse(__firebase_config)
+      : {
+          // If running independently on GitHub Pages, replace with your Firebase project keys:
+          apiKey: "AIzaSy_REPLACE_WITH_YOUR_FIREBASE_API_KEY",
+          authDomain: "nia-fablab.firebaseapp.com",
+          projectId: "nia-fablab",
+          storageBucket: "nia-fablab.appspot.com",
+          messagingSenderId: "1234567890",
+          appId: "1:1234567890:web:abcdef123456"
+        };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // --- SVG Icons Components ---
+    const IconScissors = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>
+      </svg>
+    );
+
+    const IconPrinter = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+      </svg>
+    );
+
+    const IconCalendar = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    );
+
+    const IconClock = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    );
+
+    const IconUser = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+    );
+
+    const IconCheckCircle2 = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/>
+      </svg>
+    );
+
+    const IconAlertCircle = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    );
+
+    const IconSearch = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    );
+
+    const IconChevronRight = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    );
+
+    const IconDownload = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    );
+
+    const IconX = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    );
+
+    const IconSparkles = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+      </svg>
+    );
+
+    const IconMapPin = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+    );
+
+    const IconGraduationCap = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+      </svg>
+    );
+
+    const IconLock = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    );
+
+    const IconPencil = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+      </svg>
+    );
+
+    const IconTrash2 = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+      </svg>
+    );
+
+    const IconLogOut = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+    );
+
+    const IconShieldCheck = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>
+      </svg>
+    );
+
+    const IconCalendarDays = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/>
+      </svg>
+    );
+
+    const IconWifi = ({ className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+      </svg>
+    );
+
+    // --- MACHINES CONFIGURATION ---
+    const MACHINES = [
+      {
+        id: 'laser-cutter',
+        name: 'Laser Cutting Machine',
+        type: 'Laser Cutter',
+        slotDuration: '1 hour',
+        icon: IconScissors,
+        tagline: 'Precision 2D cutting & engraving',
+      },
+      {
+        id: '3d-printer',
+        name: '3D Printing Machine',
+        type: '3D Printer',
+        slotDuration: '1 hour',
+        icon: IconPrinter,
+        tagline: 'Additive 3D rapid prototyping',
+      }
+    ];
+
+    // 1-Hour Time Slots from 08:00 AM to 06:30 PM
+    const ONE_HOUR_SLOTS = [
+      '08:00 AM - 09:00 AM',
+      '09:00 AM - 10:00 AM',
+      '10:00 AM - 11:00 AM',
+      '11:00 AM - 12:00 PM',
+      '12:00 PM - 01:00 PM',
+      '01:00 PM - 02:00 PM',
+      '02:00 PM - 03:00 PM',
+      '03:00 PM - 04:00 PM',
+      '04:00 PM - 05:00 PM',
+      '05:00 PM - 06:00 PM',
+      '05:30 PM - 06:30 PM',
+    ];
+
+    const SEMESTER_OPTIONS = [
+      'B.Arch Sem 1',
+      'B.Arch Sem 2',
+      'B.Arch Sem 3',
+      'B.Arch Sem 4',
+      'B.Arch Sem 5',
+      'B.Arch Sem 6',
+      'B.Arch Sem 7',
+      'B.Arch Sem 8',
+      'B.Arch Sem 9',
+      'B.Arch Sem 10',
+      'M.Arch'
+    ];
+
+    function getOffsetDateString(offsetDays) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      return d.toISOString().split('T')[0];
+    }
+
+    function formatDateDisplay(isoDate) {
+      if (!isoDate) return '';
+      const date = new Date(isoDate + 'T00:00:00');
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric'
+      });
+    }
+
+    function App() {
+      const [user, setUser] = useState(null);
+      const [isSyncing, setIsSyncing] = useState(true);
+      const [activeTab, setActiveTab] = useState('book');
+      const [selectedMachine, setSelectedMachine] = useState(MACHINES[0]);
+
+      // Date options for next 7 days
+      const dateOptions = useMemo(() => {
+        return [0, 1, 2, 3, 4, 5, 6].map((offset) => {
+          const iso = getOffsetDateString(offset);
+          const date = new Date(iso + 'T00:00:00');
+          return {
+            iso,
+            label: date.toLocaleDateString('en-US', { weekday: 'short' }),
+            dayNum: date.getDate(),
+            month: date.toLocaleDateString('en-US', { month: 'short' })
+          };
+        });
+      }, []);
+
+      const [selectedDate, setSelectedDate] = useState(dateOptions[0].iso);
+      const [selectedSlot, setSelectedSlot] = useState('');
+
+      const [formData, setFormData] = useState({
+        name: '',
+        semester: 'B.Arch Sem 4'
+      });
+
+      const [formErrors, setFormErrors] = useState({});
+      const [bookings, setBookings] = useState([]);
+      const [successModalData, setSuccessModalData] = useState(null);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [statusNotice, setStatusNotice] = useState('');
+
+      // --- ADMIN STATE ---
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+      const [adminPasswordInput, setAdminPasswordInput] = useState('');
+      const [adminLoginError, setAdminLoginError] = useState('');
+
+      const [editingBooking, setEditingBooking] = useState(null);
+      const [editFormData, setEditFormData] = useState({
+        studentName: '',
+        semester: '',
+        machineId: '',
+        date: '',
+        timeSlot: ''
+      });
+      const [editError, setEditError] = useState('');
+      const [deleteConfirmBooking, setDeleteConfirmBooking] = useState(null);
+
+      // (1) Mandatory Rule: Authenticate first
+      useEffect(() => {
+        const initAuth = async () => {
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+              await signInAnonymously(auth);
+            }
+          } catch (err) {
+            console.warn("Auth initializing fallback:", err.message);
+          }
+        };
+
+        initAuth();
+        const unsubscribe = onAuthStateChanged(auth, setUser);
+        return () => unsubscribe();
+      }, []);
+
+      // (2) Mandatory Rule: Listen to public bookings collection after Auth is established
+      useEffect(() => {
+        if (!user) return;
+
+        // Strict path: /artifacts/{appId}/public/data/{collectionName}
+        const bookingsCol = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
+
+        const unsubscribe = onSnapshot(
+          bookingsCol,
+          (snapshot) => {
+            const list = [];
+            snapshot.forEach((docSnap) => {
+              list.push({ id: docSnap.id, ...docSnap.data() });
+            });
+
+            // In-memory sorting (Mandatory RULE 2: No compound queries in Firestore)
+            list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            setBookings(list);
+            setIsSyncing(false);
+          },
+          (error) => {
+            console.error("Firestore real-time sync error:", error);
+            setIsSyncing(false);
+          }
+        );
+
+        return () => unsubscribe();
+      }, [user]);
+
+      const isSlotBooked = (slot, date, machineId, excludeId = null) => {
+        return bookings.some(
+          (b) => b.machineId === machineId && b.date === date && b.timeSlot === slot && b.id !== excludeId
+        );
+      };
+
+      const handleSlotSelect = (slot) => {
+        if (isSlotBooked(slot, selectedDate, selectedMachine.id)) return;
+        setSelectedSlot(slot);
+      };
+
+      const handleCustomDateChange = (e) => {
+        const val = e.target.value;
+        if (val) {
+          setSelectedDate(val);
+          setSelectedSlot('');
+        }
+      };
+
+      const isSelectedDateInQuickList = dateOptions.some((d) => d.iso === selectedDate);
+
+      const validateForm = () => {
+        const errors = {};
+        if (!formData.name.trim()) {
+          errors.name = 'Please enter your full name';
+        }
+        if (!selectedSlot) {
+          errors.slot = 'Please select an available 1-hour time slot';
+        }
+        return errors;
+      };
+
+      // Realtime Booking creation
+      const handleSubmitBooking = async (e) => {
+        e.preventDefault();
+        const errors = validateForm();
+        if (Object.keys(errors).length > 0) {
+          setFormErrors(errors);
+          return;
+        }
+
+        // Concurrency protection: Check if slot was booked just a moment ago by someone else
+        if (isSlotBooked(selectedSlot, selectedDate, selectedMachine.id)) {
+          setFormErrors({ slot: 'This slot was just reserved by another student. Please select another slot.' });
+          return;
+        }
+
+        setFormErrors({});
+
+        const prefix = selectedMachine.id === 'laser-cutter' ? 'NIA-LC' : 'NIA-3D';
+        const randomToken = `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
+
+        const newBooking = {
+          id: randomToken,
+          token: randomToken,
+          machineId: selectedMachine.id,
+          machineName: selectedMachine.name,
+          studentName: formData.name.trim(),
+          semester: formData.semester,
+          date: selectedDate,
+          timeSlot: selectedSlot,
+          status: 'Confirmed',
+          createdAt: Date.now(),
+          bookedByUserId: user ? user.uid : 'anon'
+        };
+
+        try {
+          if (user) {
+            // Write directly to Firestore public collection so every connected student gets the update live
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', newBooking.id);
+            await setDoc(docRef, newBooking);
+          } else {
+            // Fallback for offline mode
+            setBookings((prev) => [newBooking, ...prev]);
+          }
+
+          setSuccessModalData(newBooking);
+          setSelectedSlot('');
+          setFormData({ name: '', semester: 'B.Arch Sem 4' });
+        } catch (err) {
+          setFormErrors({ slot: 'Unable to sync reservation. Please check your connection and try again.' });
+        }
+      };
+
+      // Admin Login
+      const handleAdminLogin = (e) => {
+        e.preventDefault();
+        if (adminPasswordInput === 'admin564') {
+          setIsAdmin(true);
+          setShowAdminLoginModal(false);
+          setAdminPasswordInput('');
+          setAdminLoginError('');
+        } else {
+          setAdminLoginError('Incorrect admin password. Please try again.');
+        }
+      };
+
+      const handleAdminLogout = () => {
+        setIsAdmin(false);
+        setEditingBooking(null);
+        setDeleteConfirmBooking(null);
+      };
+
+      const handleOpenEdit = (booking) => {
+        setEditingBooking(booking);
+        setEditFormData({
+          studentName: booking.studentName,
+          semester: booking.semester,
+          machineId: booking.machineId,
+          date: booking.date,
+          timeSlot: booking.timeSlot
+        });
+        setEditError('');
+      };
+
+      // Realtime Admin Update
+      const handleSaveEdit = async (e) => {
+        e.preventDefault();
+        if (!editFormData.studentName.trim()) {
+          setEditError('Student name cannot be empty.');
+          return;
+        }
+
+        const conflict = isSlotBooked(
+          editFormData.timeSlot,
+          editFormData.date,
+          editFormData.machineId,
+          editingBooking.id
+        );
+
+        if (conflict) {
+          setEditError('This slot is already booked on this date.');
+          return;
+        }
+
+        const machineObj = MACHINES.find((m) => m.id === editFormData.machineId);
+
+        try {
+          if (user) {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', editingBooking.id);
+            await updateDoc(docRef, {
+              studentName: editFormData.studentName.trim(),
+              semester: editFormData.semester,
+              machineId: editFormData.machineId,
+              machineName: machineObj ? machineObj.name : editingBooking.machineName,
+              date: editFormData.date,
+              timeSlot: editFormData.timeSlot,
+              updatedAt: Date.now()
+            });
+          } else {
+            setBookings((prev) =>
+              prev.map((b) =>
+                b.id === editingBooking.id
+                  ? {
+                      ...b,
+                      studentName: editFormData.studentName.trim(),
+                      semester: editFormData.semester,
+                      machineId: editFormData.machineId,
+                      machineName: machineObj ? machineObj.name : b.machineName,
+                      date: editFormData.date,
+                      timeSlot: editFormData.timeSlot
+                    }
+                  : b
+              )
+            );
+          }
+          setEditingBooking(null);
+        } catch (err) {
+          setEditError('Failed to update live booking: ' + err.message);
+        }
+      };
+
+      // Realtime Admin Deletion
+      const handleDeleteBooking = async (bookingId) => {
+        try {
+          if (user) {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', bookingId);
+            await deleteDoc(docRef);
+          } else {
+            setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+          }
+          setDeleteConfirmBooking(null);
+        } catch (err) {
+          console.error("Error removing booking:", err);
+        }
+      };
+
+      const handlePrintSlip = () => {
+        window.print();
+      };
+
+      const filteredBookings = bookings.filter((b) => {
+        const q = searchQuery.toLowerCase().trim();
+        if (!q) return true;
+        return (
+          (b.studentName && b.studentName.toLowerCase().includes(q)) ||
+          (b.token && b.token.toLowerCase().includes(q)) ||
+          (b.machineName && b.machineName.toLowerCase().includes(q)) ||
+          (b.semester && b.semester.toLowerCase().includes(q))
+        );
+      });
+
+      return (
+        <div className="min-h-screen bg-[#FBFBFA] text-zinc-900 flex flex-col font-sans antialiased selection:bg-zinc-200">
+          {/* INSTITUTION TOP NAVIGATION */}
+          <header className="bg-white border-b border-zinc-200 sticky top-0 z-40">
+            <div className="max-w-6xl mx-auto px-3.5 sm:px-6">
+              <div className="flex items-center justify-between min-h-16 py-2 gap-2">
+                {/* Logo & Institute Name */}
+                <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-bold text-xs sm:text-sm tracking-wider shadow-xs">
+                    NIA
+                  </div>
+                  <div className="truncate">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h1 className="font-semibold text-zinc-900 tracking-tight text-xs sm:text-base truncate">
+                        Nitte Institute of Architecture
+                      </h1>
+                      <span className="hidden md:inline-block px-2 py-0.5 text-[10px] sm:text-[11px] font-medium bg-zinc-100 text-zinc-600 rounded-md border border-zinc-200">
+                        FabLab
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] sm:text-xs text-zinc-500 truncate">
+                        Digital Lab Slot Booking
+                      </p>
+                      {/* Live Sync Status Pill */}
+                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                        Live Sync
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Navigation Tabs & Admin */}
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <div className="flex items-center bg-zinc-100 p-1 rounded-xl border border-zinc-200/80">
+                    <button
+                      onClick={() => setActiveTab('book')}
+                      className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                        activeTab === 'book'
+                          ? 'bg-white text-zinc-900 shadow-xs'
+                          : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      Book
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('schedule')}
+                      className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                        activeTab === 'schedule'
+                          ? 'bg-white text-zinc-900 shadow-xs'
+                          : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      Schedule
+                    </button>
+                  </div>
+
+                  {/* Admin Button */}
+                  {isAdmin ? (
+                    <div className="flex items-center space-x-1 bg-amber-50 border border-amber-200 text-amber-900 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-medium">
+                      <IconShieldCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span className="hidden sm:inline">Admin</span>
+                      <button
+                        onClick={handleAdminLogout}
+                        title="Logout Admin"
+                        className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition"
+                      >
+                        <IconLogOut className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowAdminLoginModal(true)}
+                      className="flex items-center space-x-1 p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-medium text-zinc-600 hover:text-zinc-900 border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 transition"
+                      title="Admin Access"
+                    >
+                      <IconLock className="w-3.5 h-3.5 text-zinc-500" />
+                      <span className="hidden sm:inline">Admin</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* OPERATIONAL STATUS BANNER */}
+          <div className="bg-zinc-50 border-b border-zinc-200/70 py-2">
+            <div className="max-w-6xl mx-auto px-3.5 sm:px-6 flex flex-wrap items-center justify-between gap-1.5 text-[11px] sm:text-xs text-zinc-600">
+              <div className="flex items-center space-x-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
+                <span className="font-semibold text-zinc-800">Lab Timings:</span>
+                <span>Mon–Sun 08:00 AM – 06:30 PM (1-Hr Slots)</span>
+              </div>
+              <div className="flex items-center space-x-2 text-zinc-500">
+                <IconMapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span>Room FAB-02, Ground Floor</span>
+              </div>
+            </div>
+          </div>
+
+          {/* MAIN CONTENT AREA */}
+          <main className="flex-1 max-w-6xl w-full mx-auto px-3.5 sm:px-6 py-5 sm:py-8">
+            {/* ================= VIEW 1: BOOKING ================= */}
+            {activeTab === 'book' && (
+              <div className="space-y-6 sm:space-y-8">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-stone-100 border border-stone-200 text-stone-700 text-[11px] font-mono uppercase tracking-wider mb-1.5">
+                    <IconSparkles className="w-3 h-3 text-amber-600" /> Real-Time Reservations
+                  </div>
+                  <h2 className="text-xl sm:text-2xl md:text-3xl font-light text-zinc-900 tracking-tight">
+                    Reserve your slot in <span className="font-semibold">3 simple steps</span>
+                  </h2>
+                  <p className="mt-1 text-xs sm:text-sm text-zinc-500">
+                    All slots sync live. When you reserve, it instantly locks across all students and lab monitors.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+                  {/* LEFT: Machine & Slot Selection */}
+                  <div className="lg:col-span-7 space-y-5 sm:space-y-6">
+                    {/* STEP 1: SELECT MACHINE */}
+                    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-zinc-200/90 shadow-xs">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Step 01</span>
+                        <span className="text-xs font-medium text-zinc-600">Select Machine</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {MACHINES.map((machine) => {
+                          const Icon = machine.icon;
+                          const isSelected = selectedMachine.id === machine.id;
+                          return (
+                            <button
+                              key={machine.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedMachine(machine);
+                                setSelectedSlot('');
+                              }}
+                              className={`min-h-[46px] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium border transition-all active:scale-[0.99] touch-manipulation ${
+                                isSelected
+                                  ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs ring-2 ring-zinc-900/10'
+                                  : 'bg-white text-zinc-800 border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2.5 truncate pr-2">
+                                <span className={`p-1.5 rounded-lg shrink-0 ${isSelected ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                                  <Icon className="w-4 h-4" />
+                                </span>
+                                <span className="font-semibold truncate">{machine.name}</span>
+                              </span>
+                              <span className="text-[11px] shrink-0 font-medium flex items-center gap-1">
+                                {isSelected ? (
+                                  <>
+                                    <IconCheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>Selected</span>
+                                  </>
+                                ) : (
+                                  <span className="text-zinc-400">Choose</span>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* STEP 2: SELECT DATE & 1-HOUR TIME SLOT */}
+                    <div className="bg-white rounded-2xl p-4 sm:p-6 border border-zinc-200/90 shadow-xs">
+                      <div className="flex items-center justify-between mb-3.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Step 02</span>
+                        <span className="text-xs font-medium text-zinc-600">Pick Date & Time</span>
+                      </div>
+
+                      {/* Date Section with Quick Selector + Direct Native Date Input */}
+                      <div className="mb-5">
+                        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                          <label className="text-xs font-medium text-zinc-700 flex items-center gap-1.5">
+                            <IconCalendar className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>Select Booking Date</span>
+                          </label>
+
+                          <div className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200/70 px-2.5 py-1 rounded-lg border border-zinc-200 transition">
+                            <IconCalendarDays className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+                            <span className="text-[11px] text-zinc-600 font-medium shrink-0">Other:</span>
+                            <input
+                              type="date"
+                              min={getOffsetDateString(0)}
+                              value={selectedDate}
+                              onChange={handleCustomDateChange}
+                              className="text-xs font-medium text-zinc-800 bg-transparent border-none focus:outline-none cursor-pointer"
+                              title="Choose any date from calendar"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Date Cards Carousel */}
+                        <div className="flex sm:grid sm:grid-cols-7 gap-2 overflow-x-auto pb-2 pt-0.5 -mx-1 px-1 no-scrollbar snap-x touch-pan-x">
+                          {dateOptions.map((item) => {
+                            const isSelected = selectedDate === item.iso;
+                            return (
+                              <button
+                                key={item.iso}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDate(item.iso);
+                                  setSelectedSlot('');
+                                }}
+                                className={`shrink-0 w-20 sm:w-auto rounded-xl p-2.5 text-center border transition-all snap-start active:scale-95 touch-manipulation ${
+                                  isSelected
+                                    ? 'border-zinc-900 bg-zinc-900 text-white shadow-xs'
+                                    : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-800'
+                                }`}
+                              >
+                                <span className={`block text-[10px] sm:text-[11px] uppercase tracking-wider ${isSelected ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                                  {item.label}
+                                </span>
+                                <span className="block text-base sm:text-lg font-semibold my-0.5">{item.dayNum}</span>
+                                <span className={`block text-[10px] ${isSelected ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                                  {item.month}
+                                </span>
+                              </button>
+                            );
+                          })}
+
+                          {!isSelectedDateInQuickList && (
+                            <div className="shrink-0 w-24 sm:w-auto rounded-xl p-2.5 text-center border border-zinc-900 bg-zinc-900 text-white shadow-xs snap-start">
+                              <span className="block text-[10px] uppercase tracking-wider text-amber-400 font-medium">Custom</span>
+                              <span className="block text-base sm:text-lg font-semibold my-0.5">
+                                {new Date(selectedDate + 'T00:00:00').getDate()}
+                              </span>
+                              <span className="block text-[10px] text-zinc-300">
+                                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {!isSelectedDateInQuickList && (
+                          <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-600 bg-amber-50/70 border border-amber-200/80 px-3 py-1.5 rounded-lg">
+                            <span>Selected date: <strong>{formatDateDisplay(selectedDate)}</strong></span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDate(dateOptions[0].iso)}
+                              className="text-amber-800 hover:underline font-medium text-[10px]"
+                            >
+                              Reset to Today
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Time Slots */}
+                      <div>
+                        <div className="flex flex-wrap items-center justify-between gap-1 mb-2.5">
+                          <label className="text-xs font-medium text-zinc-700">
+                            1-Hour Slots • {formatDateDisplay(selectedDate)}
+                          </label>
+                          <div className="flex items-center gap-2.5 text-[10px] sm:text-[11px] text-zinc-500">
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-white border border-zinc-300"></span> Open
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-zinc-200 border border-zinc-300"></span> Booked
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 sm:max-h-72 overflow-y-auto pr-1">
+                          {ONE_HOUR_SLOTS.map((slot) => {
+                            const booked = isSlotBooked(slot, selectedDate, selectedMachine.id);
+                            const isChosen = selectedSlot === slot;
+
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                disabled={booked}
+                                onClick={() => handleSlotSelect(slot)}
+                                className={`min-h-[44px] flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium border transition-all active:scale-[0.99] touch-manipulation ${
+                                  booked
+                                    ? 'bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed line-through'
+                                    : isChosen
+                                    ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
+                                    : 'bg-white text-zinc-800 border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50'
+                                }`}
+                              >
+                                <span className="flex items-center gap-2">
+                                  <IconClock className={`w-3.5 h-3.5 shrink-0 ${isChosen ? 'text-zinc-300' : 'text-zinc-400'}`} />
+                                  <span>{slot}</span>
+                                </span>
+                                <span className="text-[10px] sm:text-[11px] ml-1 font-semibold">
+                                  {booked ? 'Reserved' : isChosen ? 'Selected' : 'Open'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {formErrors.slot && (
+                          <p className="mt-2 text-xs text-rose-600 flex items-center gap-1">
+                            <IconAlertCircle className="w-3.5 h-3.5 shrink-0" />
+                            {formErrors.slot}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RIGHT: Step 3 - Student Info */}
+                  <div className="lg:col-span-5">
+                    <div className="bg-white rounded-2xl p-4 sm:p-6 border border-zinc-200/90 shadow-xs lg:sticky lg:top-24">
+                      <div className="flex items-center justify-between mb-3.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Step 03</span>
+                        <span className="text-xs font-medium text-zinc-600">Student Details</span>
+                      </div>
+
+                      <form onSubmit={handleSubmitBooking} className="space-y-4">
+                        {/* Selected Summary Card */}
+                        <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200/80 text-xs space-y-1.5">
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Machine:</span>
+                            <span className="font-semibold text-zinc-800">{selectedMachine.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Date:</span>
+                            <span className="font-medium text-zinc-800">{formatDateDisplay(selectedDate)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Duration:</span>
+                            <span className="font-medium text-zinc-800">1 Hour</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-zinc-500">Slot:</span>
+                            <span className="font-medium text-zinc-900 text-right">
+                              {selectedSlot || <span className="text-amber-600 italic">Select slot on left</span>}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Full Name */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                            Full Name <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <IconUser className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3.5" />
+                            <input
+                              type="text"
+                              value={formData.name}
+                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                              placeholder="Enter your full name"
+                              className={`w-full min-h-[44px] pl-10 pr-3 py-2 text-xs sm:text-sm rounded-xl border bg-white focus:outline-none transition ${
+                                formErrors.name
+                                  ? 'border-rose-400 ring-1 ring-rose-400'
+                                  : 'border-zinc-200 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900'
+                              }`}
+                            />
+                          </div>
+                          {formErrors.name && (
+                            <p className="mt-1 text-[11px] text-rose-500">{formErrors.name}</p>
+                          )}
+                        </div>
+
+                        {/* Semester */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                            Semester <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <IconGraduationCap className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3.5" />
+                            <select
+                              value={formData.semester}
+                              onChange={(e) => setFormData({ ...formData, semester: e.target.value })}
+                              className="w-full min-h-[44px] pl-10 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-zinc-200 bg-white focus:outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 appearance-none"
+                            >
+                              {SEMESTER_OPTIONS.map((sem) => (
+                                <option key={sem} value={sem}>
+                                  {sem}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Submit Button */}
+                        <button
+                          type="submit"
+                          className="w-full min-h-[46px] mt-2 py-3 px-4 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium tracking-wide transition-all shadow-xs flex items-center justify-center gap-2 touch-manipulation"
+                        >
+                          <span>Confirm & Reserve Online</span>
+                          <IconChevronRight className="w-4 h-4" />
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= VIEW 2: SCHEDULE & TOKENS ================= */}
+            {activeTab === 'schedule' && (
+              <div className="space-y-5 sm:space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-semibold text-zinc-900 tracking-tight">
+                      Live Queue & Confirmed Bookings
+                    </h2>
+                    <p className="text-xs sm:text-sm text-zinc-500">
+                      Real-time reservations synced across the FabLab.
+                    </p>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative w-full sm:w-72">
+                    <IconSearch className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3.5 sm:top-2.5" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by student or token..."
+                      className="w-full min-h-[42px] sm:min-h-0 pl-10 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-zinc-200 bg-white focus:outline-none focus:border-zinc-900 transition"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-3 sm:top-2.5 text-zinc-400 hover:text-zinc-600"
+                      >
+                        <IconX className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Content Container */}
+                <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs overflow-hidden">
+                  <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-zinc-100 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-semibold text-xs text-zinc-800 uppercase tracking-wider">
+                        Live Reserved Slots ({filteredBookings.length})
+                      </span>
+                      {isAdmin && (
+                        <span className="text-[10px] bg-amber-50 text-amber-700 font-semibold px-2 py-0.5 rounded border border-amber-200">
+                          Admin Mode Active
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] sm:text-xs text-zinc-400">1-Hour Blocks</span>
+                  </div>
+
+                  {isSyncing ? (
+                    <div className="py-16 text-center text-zinc-400 text-xs">
+                      <span className="inline-block w-6 h-6 border-2 border-zinc-300 border-t-zinc-900 rounded-full animate-spin mb-2"></span>
+                      <p>Syncing live FabLab slots...</p>
+                    </div>
+                  ) : filteredBookings.length === 0 ? (
+                    <div className="py-16 text-center text-zinc-400 text-xs">
+                      <IconAlertCircle className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+                      No bookings found matching "{searchQuery}".
+                    </div>
+                  ) : (
+                    <div>
+                      {/* MOBILE VIEW: Touch Cards */}
+                      <div className="block md:hidden divide-y divide-zinc-100">
+                        {filteredBookings.map((b) => {
+                          const isLaser = b.machineId === 'laser-cutter';
+                          return (
+                            <div key={b.id} className="p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono font-bold text-xs text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded">
+                                  {b.token}
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-xs text-zinc-700 font-medium">
+                                  {isLaser ? (
+                                    <IconScissors className="w-3.5 h-3.5 text-amber-600" />
+                                  ) : (
+                                    <IconPrinter className="w-3.5 h-3.5 text-sky-600" />
+                                  )}
+                                  {b.machineName}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="text-[10px] text-zinc-400 block uppercase">Student</span>
+                                  <span className="font-medium text-zinc-900">{b.studentName}</span>
+                                  <span className="text-[11px] text-zinc-500 block">{b.semester}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-zinc-400 block uppercase">Slot Details</span>
+                                  <span className="font-medium text-zinc-800 flex items-center gap-1">
+                                    <IconCalendar className="w-3 h-3 text-zinc-400" />
+                                    {formatDateDisplay(b.date)}
+                                  </span>
+                                  <span className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5">
+                                    <IconClock className="w-3 h-3 text-zinc-400" />
+                                    {b.timeSlot}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Action Buttons for Mobile */}
+                              <div className="flex items-center justify-end space-x-2 pt-1">
+                                <button
+                                  onClick={() => setSuccessModalData(b)}
+                                  className="px-3 py-1.5 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition"
+                                >
+                                  View Slip
+                                </button>
+                                {isAdmin && (
+                                  <>
+                                    <button
+                                      onClick={() => handleOpenEdit(b)}
+                                      className="p-1.5 text-zinc-600 hover:text-indigo-600 bg-zinc-100 rounded-lg transition"
+                                      title="Edit"
+                                    >
+                                      <IconPencil className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteConfirmBooking(b)}
+                                      className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition"
+                                      title="Delete"
+                                    >
+                                      <IconTrash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* DESKTOP VIEW: Table Layout */}
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="bg-zinc-50/75 border-b border-zinc-200/60 text-zinc-500 font-medium">
+                              <th className="py-3 px-4">Token</th>
+                              <th className="py-3 px-4">Machine</th>
+                              <th className="py-3 px-4">Student Name</th>
+                              <th className="py-3 px-4">Semester</th>
+                              <th className="py-3 px-4">Date & 1-Hr Slot</th>
+                              <th className="py-3 px-4 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {filteredBookings.map((b) => {
+                              const isLaser = b.machineId === 'laser-cutter';
+                              return (
+                                <tr key={b.id} className="hover:bg-zinc-50/60 transition-colors">
+                                  <td className="py-3.5 px-4 font-mono font-bold text-zinc-900">
+                                    {b.token}
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    <span className="inline-flex items-center gap-1.5 text-zinc-800 font-medium">
+                                      {isLaser ? <IconScissors className="w-3.5 h-3.5 text-amber-600" /> : <IconPrinter className="w-3.5 h-3.5 text-sky-600" />}
+                                      {b.machineName}
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-4 font-medium text-zinc-900">
+                                    {b.studentName}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-zinc-600">
+                                    {b.semester}
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    <div className="flex items-center gap-1 text-zinc-800 font-medium">
+                                      <IconCalendar className="w-3 h-3 text-zinc-400" />
+                                      {formatDateDisplay(b.date)}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[11px] text-zinc-500 mt-0.5">
+                                      <IconClock className="w-3 h-3 text-zinc-400" />
+                                      {b.timeSlot}
+                                    </div>
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right">
+                                    <div className="flex items-center justify-end space-x-1.5">
+                                      <button
+                                        onClick={() => setSuccessModalData(b)}
+                                        className="px-2.5 py-1 text-[11px] font-medium text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200/80 rounded-md transition"
+                                      >
+                                        Slip
+                                      </button>
+                                      {isAdmin && (
+                                        <>
+                                          <button
+                                            onClick={() => handleOpenEdit(b)}
+                                            title="Edit Booking"
+                                            className="p-1.5 text-zinc-600 hover:text-indigo-600 bg-zinc-100 hover:bg-indigo-50 rounded-md transition"
+                                          >
+                                            <IconPencil className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => setDeleteConfirmBooking(b)}
+                                            title="Delete Booking"
+                                            className="p-1.5 text-zinc-600 hover:text-rose-600 bg-zinc-100 hover:bg-rose-50 rounded-md transition"
+                                          >
+                                            <IconTrash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* ================= MODAL: ADMIN LOGIN ================= */}
+          {showAdminLoginModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-xs p-3.5">
+              <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-zinc-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-100 text-zinc-800 flex items-center justify-center">
+                      <IconLock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-zinc-900 text-sm">Lab Admin Access</h3>
+                      <p className="text-[11px] text-zinc-500">Authorized personnel only</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowAdminLoginModal(false);
+                      setAdminLoginError('');
+                      setAdminPasswordInput('');
+                    }}
+                    className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg"
+                  >
+                    <IconX className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAdminLogin} className="p-4 sm:p-5 space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Enter Password
+                    </label>
+                    <input
+                      type="password"
+                      value={adminPasswordInput}
+                      onChange={(e) => setAdminPasswordInput(e.target.value)}
+                      placeholder="Admin password"
+                      autoFocus
+                      className="w-full min-h-[44px] px-3 py-2 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 transition"
+                    />
+                    {adminLoginError && (
+                      <p className="mt-1.5 text-[11px] text-rose-500 flex items-center gap-1">
+                        <IconAlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {adminLoginError}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAdminLoginModal(false);
+                        setAdminLoginError('');
+                        setAdminPasswordInput('');
+                      }}
+                      className="w-1/2 min-h-[44px] text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-zinc-100 rounded-xl transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="w-1/2 min-h-[44px] text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl transition"
+                    >
+                      Unlock
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ================= MODAL: ADMIN EDIT BOOKING ================= */}
+          {editingBooking && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-xs p-3.5">
+              <div className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-xl border border-zinc-200 animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/60 sticky top-0 bg-white z-10">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                      <IconPencil className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-zinc-900 text-sm">Modify Booking</h3>
+                      <p className="text-[11px] text-zinc-500 font-mono">Token: {editingBooking.token}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setEditingBooking(null)}
+                    className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg"
+                  >
+                    <IconX className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveEdit} className="p-4 sm:p-5 space-y-3.5 text-xs">
+                  {editError && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-center gap-1.5 text-[11px]">
+                      <IconAlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{editError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block font-medium text-zinc-700 mb-1">Student Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.studentName}
+                      onChange={(e) => setEditFormData({ ...editFormData, studentName: e.target.value })}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-zinc-200 focus:outline-none focus:border-zinc-900 text-sm"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-zinc-700 mb-1">Semester</label>
+                    <select
+                      value={editFormData.semester}
+                      onChange={(e) => setEditFormData({ ...editFormData, semester: e.target.value })}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:border-zinc-900 text-sm"
+                    >
+                      {SEMESTER_OPTIONS.map((sem) => (
+                        <option key={sem} value={sem}>
+                          {sem}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-zinc-700 mb-1">Machine</label>
+                    <select
+                      value={editFormData.machineId}
+                      onChange={(e) => setEditFormData({ ...editFormData, machineId: e.target.value })}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:border-zinc-900 text-sm"
+                    >
+                      {MACHINES.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-zinc-700 mb-1">Booking Date</label>
+                    <input
+                      type="date"
+                      min={getOffsetDateString(0)}
+                      value={editFormData.date}
+                      onChange={(e) => setEditFormData({ ...editFormData, date: e.target.value })}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:border-zinc-900 text-sm"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-zinc-700 mb-1">1-Hour Time Slot</label>
+                    <select
+                      value={editFormData.timeSlot}
+                      onChange={(e) => setEditFormData({ ...editFormData, timeSlot: e.target.value })}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:border-zinc-900 text-sm"
+                    >
+                      {ONE_HOUR_SLOTS.map((slot) => (
+                        <option key={slot} value={slot}>
+                          {slot}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-2 pt-3 border-t border-zinc-100">
+                    <button
+                      type="button"
+                      onClick={() => setEditingBooking(null)}
+                      className="min-h-[40px] px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="min-h-[40px] px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl transition font-medium"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ================= MODAL: CONFIRM DELETE ================= */}
+          {deleteConfirmBooking && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-xs p-3.5">
+              <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-zinc-200 p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <IconTrash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 text-base">Delete Booking?</h3>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Are you sure you want to remove token <strong className="text-zinc-800">{deleteConfirmBooking.token}</strong> for{' '}
+                    <strong className="text-zinc-800">{deleteConfirmBooking.studentName}</strong>? This slot will immediately open up online for others.
+                  </p>
+                </div>
+                <div className="flex items-center justify-end space-x-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmBooking(null)}
+                    className="min-h-[40px] px-3.5 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-zinc-100 rounded-xl transition"
+                  >
+                    Keep Booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBooking(deleteConfirmBooking.id)}
+                    className="min-h-[40px] px-3.5 py-2 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition shadow-xs"
+                  >
+                    Confirm Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= MODAL: DIGITAL BOOKING SLIP ================= */}
+          {successModalData && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-xs p-3.5">
+              <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-zinc-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                {/* Modal Header */}
+                <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-start justify-between bg-zinc-50/50">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                      <IconCheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-zinc-900 text-sm">Slot Reservation Confirmed</h3>
+                      <p className="text-[11px] text-zinc-500">Nitte Institute of Architecture</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSuccessModalData(null)}
+                    className="p-1 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100"
+                  >
+                    <IconX className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Printable Pass Content */}
+                <div id="booking-slip" className="p-4 sm:p-6 space-y-4 text-xs">
+                  <div className="p-4 bg-zinc-900 text-white rounded-xl text-center space-y-1">
+                    <span className="text-[10px] tracking-widest uppercase text-zinc-400 font-mono">
+                      Reservation Token
+                    </span>
+                    <div className="text-2xl font-mono font-bold tracking-wider text-amber-400">
+                      {successModalData.token}
+                    </div>
+                    <p className="text-[11px] text-zinc-300">Show this token at the workshop desk</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 py-2 border-y border-zinc-100">
+                    <div>
+                      <span className="text-zinc-400 block text-[10px] uppercase font-medium">Student Name</span>
+                      <span className="font-semibold text-zinc-800 text-xs sm:text-sm truncate block">
+                        {successModalData.studentName}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-400 block text-[10px] uppercase font-medium">Semester</span>
+                      <span className="font-semibold text-zinc-800 text-xs sm:text-sm block">
+                        {successModalData.semester}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-400 block text-[10px] uppercase font-medium">Machine</span>
+                      <span className="font-medium text-zinc-800 text-xs block truncate">
+                        {successModalData.machineName}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-400 block text-[10px] uppercase font-medium">Booking Date</span>
+                      <span className="font-medium text-zinc-800 text-xs block">
+                        {formatDateDisplay(successModalData.date)}
+                      </span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-zinc-400 block text-[10px] uppercase font-medium">Allocated 1-Hour Slot</span>
+                      <span className="font-semibold text-emerald-700 text-xs sm:text-sm block">
+                        {successModalData.timeSlot}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-400">
+                    Please arrive at Room FAB-02 five minutes before your slot begins.
+                  </p>
+                </div>
+
+                <div className="p-3.5 sm:p-4 bg-zinc-50/80 border-t border-zinc-100 flex items-center gap-2">
+                  <button
+                    onClick={handlePrintSlip}
+                    className="flex-1 min-h-[44px] py-2 px-3 bg-white hover:bg-zinc-100 text-zinc-800 border border-zinc-200 rounded-xl text-xs font-medium transition flex items-center justify-center gap-1.5"
+                  >
+                    <IconDownload className="w-3.5 h-3.5 text-zinc-500" />
+                    Print / Save Slip
+                  </button>
+                  <button
+                    onClick={() => setSuccessModalData(null)}
+                    className="flex-1 min-h-[44px] py-2 px-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-medium transition"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER */}
+          <footer className="border-t border-zinc-200 bg-white py-5 sm:py-6 mt-10 text-xs text-zinc-500">
+            <div className="max-w-6xl mx-auto px-3.5 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+              <div className="flex items-center space-x-2">
+                <span className="font-semibold text-zinc-800">Nitte Institute of Architecture (NIA)</span>
+                <span>•</span>
+                <span>Mangaluru, Karnataka</span>
+              </div>
+              <div className="flex items-center space-x-3 text-zinc-400 text-[11px] sm:text-xs">
+                <span>Room FAB-02 Digital Lab</span>
+                <span>•</span>
+                <span>Daily: 08:00 AM – 06:30 PM (1-Hr Slots)</span>
+              </div>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    const rootElement = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(<App />);
+  </script>
+</body>
+</html>
